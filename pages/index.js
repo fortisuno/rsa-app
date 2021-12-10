@@ -1,9 +1,14 @@
 import axios from "axios";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { saveAs } from "file-saver";
 import JSZip from "jszip";
 
 import { FileUpload } from "../components/FileUpload";
+import { useAuth } from "../utils/auth";
+import { Loading } from "../components/Loading";
+import { useRouter } from "next/router";
+import { Modal } from "react-bootstrap";
+import { ErrorMessage, Field, Form, Formik } from "formik";
 
 export async function getServerSideProps() {
 
@@ -34,6 +39,21 @@ export default function Home({ defaultKeyPair }) {
   
   const [customKeyPair, setCustomKeyPair] = useState(null)    // Llaves especificadas por el usuario
   const [decryptedData, setDecryptedData] = useState('')      // Mensaje encriptado
+  const [show, setShow] = useState(false)
+  const [isLogged, setIsLogged] = useState(false)
+  const router = useRouter()
+  const {session: {data, loading}, logout} = useAuth()
+  
+
+  useEffect(() =>{
+    if(!loading && data) {
+      setTimeout(() => {
+        setIsLogged(true)
+      }, 1000)
+    } else if(!loading && !data){
+      router.replace('/login')
+    }
+  },[loading, data, router])
 
   // Encripta un archivo txt
   const handleEncrypt = (files) => {
@@ -49,7 +69,7 @@ export default function Home({ defaultKeyPair }) {
       // la llave publica
       axios.post('/api/encrypt', {
         plainText: reader.result,
-        publicKey: defaultKeyPair.publicKey
+        publicKey: customKeyPair ? customKeyPair.publicKey : defaultKeyPair.publicKey
       
         // Si todo sale bien entonces...
       }).then(({ data }) => {
@@ -83,7 +103,7 @@ export default function Home({ defaultKeyPair }) {
       // la llave privada
       axios.post('/api/decrypt', {
         encryptedData: reader.result,
-        privateKey: defaultKeyPair.privateKey
+        privateKey: customKeyPair ? customKeyPair.privateKey : defaultKeyPair.privateKey
 
         // Si todo sale bien entonces muestra el texto plano
       }).then(({ data }) => {
@@ -91,6 +111,8 @@ export default function Home({ defaultKeyPair }) {
         // console.log(data.decryptedData)
         setDecryptedData(data.decryptedData)
 
+      }).catch(() => {
+        setDecryptedData('No se pudo desencriptar el mensaje...')
       })
 
     }
@@ -119,16 +141,39 @@ export default function Home({ defaultKeyPair }) {
       publicKey: publicKey.value,
       privateKey: privateKey.value
     })
-
   }
-  
-  return (
-    <div className="bg-light p-5">
-      <div className="container">
-        <div className="row min-vh-100 justify-content-center">
-          <div className="col-5 text-center">
 
-            <div className="vstack gap-4">
+  const handleLogout = () => {
+    logout()
+      .then(() => {
+        router.reload()
+      }).catch(() => {
+        console.log('Hubo un error de comunicacion...')
+      })
+  }
+
+  const handleClose = () => setShow(false);
+  
+  const handleShow = () => setShow(true);
+  
+  return isLogged ? (
+    <div>
+      <div className="bg-light p-5">
+        <div className="container">
+          <div className="d-flex py-3 gap-3 mb-5 justify-content-between">
+            <div className="d-flex gap-3">
+              <button className="btn btn-sm btn-success rounded-pill px-3" onClick={ handleExportKeyPair }>Exportar llaves</button>
+              <button className="btn btn-sm btn-secondary rounded-pill px-3" onClick={ handleShow }>Importar llaves</button>
+            </div>
+            <div className="d-flex gap-3 align-items-center">
+              <h6 className="fw-bold">{ data.email }</h6>
+              <button className="btn btn-sm btn-danger rounded-pill px-3" onClick={ handleLogout }>Cerrar sesión</button>
+            </div>
+          </div>
+          <div className="row min-vh-100 justify-content-center">
+            <div className="col-5 text-center">
+
+              <div className="vstack gap-4">
                 <div className="mb-5">
                   <h1 className="display-2 fw-normal mb-0">RSA</h1>
                   <h3 className="text-muted">Equipo 4</h3>
@@ -144,14 +189,61 @@ export default function Home({ defaultKeyPair }) {
                 <FileUpload id="decrypt" className="btn d-block btn-lg btn-secondary" callback={ handleDecrypt } accept=".rsa">
                   Desencriptar
                 </FileUpload>
-                <pre className="bg-white border mx-auto p-3 mt-5" style={{ width: '100%', minHeight: 360, borderRadius: '10px' }}>
+                <pre className="bg-white border mx-auto p-3 mt-5 text-start" style={{ width: '100%', minHeight: 360, borderRadius: '10px' }}>
                   {decryptedData}
                 </pre>
               </div>
             </div>
-
           </div>
         </div>
       </div>
-  )
+      <Modal show={show} onHide={handleClose}>
+        <Modal.Header closeButton>
+          <Modal.Title>Importar Llaves</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Formik
+            initialValues={{
+              publicKey: '',
+              privateKey: ''
+            }}
+            validate={({publicKey, privateKey}) => {
+              const errors = {}
+              
+              if (!publicKey) {
+                errors.publicKey = 'Este campo es requerido';
+              }
+
+              if (!privateKey) {
+                errors.privateKey = 'Este campo es requerido';
+              }
+
+              return errors
+            }}
+            onSubmit={(values, {resetForm}) => {
+              setCustomKeyPair(values)
+              resetForm()
+              setShow(false)
+            }}
+          >
+            {({errors, isSubmitting}) => (
+              <Form className="vstack gap-4">
+              <div>
+                <h5 htmlFor="publicKey" className="mb-3">Llave publica</h5>
+                <Field name="publicKey" placeholder="Introduce tu llave publica..." rows="5" className={"form-control" + (errors.publicKey ? ' is-invalid' : '')} style={{borderRadius: '10px'}} component="textarea" />
+                <ErrorMessage name="publicKey" component={() => (<span className="d-block text-danger p-1"> {errors.publicKey} </span>)}/>
+              </div>
+              <div>
+                <h5 htmlFor="privateKey" className="mb-3">Llave privada</h5>
+                <Field name="privateKey" placeholder="Introduce tu llave privada..." rows="10" className={"form-control" + (errors.publicKey ? ' is-invalid' : '')} style={{borderRadius: '10px'}} component="textarea" />
+                <ErrorMessage name="privateKey" component={() => (<span className="d-block text-danger p-1"> {errors.publicKey} </span>)}/>
+              </div>
+              <button type="submit" className="btn btn-primary mt-4" style={{borderRadius: '10px'}} disabled={isSubmitting}>Importar</button>
+            </Form>
+            )}
+          </Formik>
+        </Modal.Body>
+      </Modal>
+    </div>
+  ) : <Loading/>
 }
