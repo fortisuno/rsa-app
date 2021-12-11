@@ -1,4 +1,9 @@
 /**
+ * Práctica: Criptografía 2/2
+ * 
+ * Virologia y Criptografía
+ * 4NV70
+ * 
  * Equipo 4
  * Hernández Ayala Oscar Uriel
  * Ibarra Ibarra Alexis
